@@ -1,0 +1,41 @@
+name: Source checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Python (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run isolated tests (device and browser checks are opt-in)
+        run: python -B -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Create GitHub source archive without an Android build
+        run: python -B scripts/package_release.py --kind github --output dist/source.zip
+
+  cpp:
+    name: Portable C++ regressions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and run portable checks
+        shell: bash
+        run: |
+          mkdir -p build-host-tests
+          for name in read_cache vector_value runtime_codec object_array_layout; do
+            g++ -std=c++20 -O2 -pthread -Isrc "tests/${name}_test.cpp" -o "build-host-tests/${name}_test"
+            "build-host-tests/${name}_test"
+          done

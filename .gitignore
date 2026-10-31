@@ -1,0 +1,60 @@
+# Generated builds and releases
+/build*/
+/cmake-build*/
+/outputs/
+/releases/
+/dist/
+CMakeFiles/
+CMakeCache.txt
+compile_commands.json
+*.o
+*.obj
+*.exe
+*.pdb
+*.ilk
+# Vendored FreeType .a files are required build inputs; do not ignore them.
+
+# Local workspaces, reverse-engineering artifacts and generated configuration
+/reference/
+/artifacts/
+/bridge/mcp_config.json
+/scripts/script.json
+/desktop/screenshots/
+*.i64
+*.idb
+*.id0
+*.id1
+*.id2
+*.nam
+*.til
+*.dmp
+*.log
+*.partial
+*.zip
+*.zip.sha256
+
+# Python and test caches
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Editor / OS / personal settings
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*.bak
+*.tmp
+.env
+.env.*
+!.env.example

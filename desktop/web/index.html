@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#12141b">
+  <title>Unreal Memory Tools</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Unreal Memory Tools"><span class="brand-mark" aria-hidden="true">U<span>↗</span></span><span>UNREAL<span class="brand-sub">MEMORY TOOLS</span></span></a>
+      <div class="toolbar"><span class="connection" id="connection" role="status"><i></i><span data-i18n="connecting">连接中</span></span><span class="divider"></span><button class="icon-button" id="language" aria-label="Switch language">EN</button><button class="icon-button" id="theme" aria-label="切换主题">☀</button></div>
+    </header>
+
+    <main>
+      <div class="page-heading"><div><div class="eyebrow" data-i18n="workspace">DEVICE WORKSPACE</div><h1 data-i18n="title">内存分析，一步到位。</h1><p data-i18n="subtitle">选择进程，探测结构，导出需要的数据。</p></div><span class="version" id="version">UMT / REFACTORED</span></div>
+      <div class="error-banner" id="error" role="alert" hidden></div>
+
+      <div class="workspace-grid">
+        <section class="panel control-panel" aria-labelledby="target-title">
+          <div class="panel-title"><h2 id="target-title" data-i18n="target">目标进程</h2><button class="text-button" id="refresh" data-i18n="refresh">↻ 刷新</button></div>
+          <label for="process" class="sr-only" data-i18n="target">目标进程</label>
+          <select id="process"><option value="" data-i18n="loading">正在加载进程…</option></select>
+          <div class="target-meta"><div><span data-i18n="processId">进程 ID</span><strong id="target-pid">—</strong></div><div><span data-i18n="profile">配置</span><strong id="target-profile">—</strong></div><span class="tag" id="target-mode" hidden></span></div>
+          <div class="action-list">
+            <button class="action primary" data-action="probe" disabled><span class="action-number">01</span><span><strong data-i18n="probe">探测偏移</strong><small data-i18n="probeHint">定位引擎与运行时结构</small></span><span class="action-arrow" aria-hidden="true">↗</span></button>
+            <button class="action" data-action="dump" disabled><span class="action-number">02</span><span><strong data-i18n="dump">导出 SDK</strong><small data-i18n="dumpHint">对象、类型与结构信息</small></span><span class="action-arrow" aria-hidden="true">↓</span></button>
+            <button class="action" data-action="library" disabled><span class="action-number">03</span><span><strong data-i18n="library">导出 libUE4</strong><small data-i18n="libraryHint">保存运行中的引擎镜像</small></span><span class="action-arrow" aria-hidden="true">↓</span></button>
+          </div>
+          <p class="control-note" id="control-note" data-i18n="firstProbe">先探测偏移，再导出 SDK 或引擎镜像。</p>
+        </section>
+
+        <div class="results-column">
+          <section class="panel activity-panel" aria-labelledby="activity-title">
+            <div class="panel-title"><h2 id="activity-title" data-i18n="activity">任务状态</h2><span class="status-pill" id="task-status" data-i18n="idle">就绪</span></div>
+            <div class="phase" id="phase" data-i18n="ready">等待选择目标</div>
+            <div class="progress-row"><span data-i18n="objects">对象扫描</span><span id="objects-value">0%</span></div><div class="progress-track"><div id="objects-bar" role="progressbar" aria-label="Objects" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div></div>
+            <div class="progress-row"><span data-i18n="export">数据导出</span><span id="dump-value">0%</span></div><div class="progress-track secondary"><div id="dump-bar" role="progressbar" aria-label="Dump" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div></div>
+            <div class="metrics" id="metrics" hidden></div>
+          </section>
+
+          <section class="panel files-panel" aria-labelledby="files-title">
+            <div class="panel-title"><h2 id="files-title" data-i18n="files">导出文件</h2><span class="count" id="file-count">0</span></div>
+            <div id="files"><div class="empty compact"><span class="empty-symbol" aria-hidden="true">↧</span><span data-i18n="noFiles">导出完成后，在这里下载文件。</span></div></div>
+          </section>
+        </div>
+      </div>
+
+      <section class="panel inspector" aria-label="Inspector">
+        <div class="inspector-toolbar"><div class="tabs" role="tablist" aria-label="Results"><button class="tab active" role="tab" id="tab-offsets" aria-selected="true" aria-controls="view-offsets" data-tab="offsets" data-i18n="offsets">偏移</button><button class="tab" role="tab" id="tab-structures" aria-selected="false" aria-controls="view-structures" tabindex="-1" data-tab="structures" data-i18n="structures">结构</button><button class="tab" role="tab" id="tab-explorer" aria-selected="false" aria-controls="view-explorer" tabindex="-1" data-tab="explorer" data-i18n="explorer">SDK 浏览器</button><button class="tab" role="tab" id="tab-world" aria-selected="false" aria-controls="view-world" tabindex="-1" data-tab="world" data-i18n="worldObjects">对象列表</button><button class="tab" role="tab" id="tab-logs" aria-selected="false" aria-controls="view-logs" tabindex="-1" data-tab="logs" data-i18n="logs">日志</button></div><div class="inspector-tools"><input type="search" id="search" autocomplete="off" placeholder="搜索名称、类型或偏移…" aria-label="搜索结果"><button class="text-button" id="clear-logs" hidden data-i18n="clearLogs">清空</button></div></div>
+        <div id="view-offsets" role="tabpanel" aria-labelledby="tab-offsets"><div class="table-wrap"><table><thead><tr><th data-i18n="name">名称</th><th data-i18n="address">地址</th><th data-i18n="relative">模块偏移</th><th data-i18n="status">状态</th></tr></thead><tbody id="offset-rows"></tbody></table></div><div class="empty" id="offset-empty" data-i18n="noOffsets">探测结果将在这里显示。</div></div>
+        <div id="view-structures" role="tabpanel" aria-labelledby="tab-structures" hidden><div id="groups"></div><div class="empty" id="group-empty" data-i18n="noStructures">探测后查看引擎结构与字段。</div></div>
+        <div id="view-explorer" role="tabpanel" aria-labelledby="tab-explorer" hidden>
+          <div class="explorer-notice" id="explorer-notice" role="status"></div>
+          <div class="explorer-error" id="explorer-error" role="alert" hidden></div>
+          <div class="explorer-layout">
+            <aside class="object-browser" aria-label="SDK object list">
+              <form id="object-search-form" class="object-search"><input type="search" id="object-query" autocomplete="off" placeholder="对象名称 / 完整路径 / 类型" aria-label="搜索 SDK 对象"><button class="small-button accent" id="object-search" type="submit" data-i18n="searchObjects">搜索</button></form>
+              <div class="object-options"><label for="object-limit" data-i18n="pageSize">每页</label><select id="object-limit"><option>25</option><option selected>100</option><option>250</option></select><button class="text-button" id="object-stop" hidden data-i18n="stopSearch">停止搜索</button><span id="object-summary"></span></div>
+              <div id="object-list" class="object-list"></div>
+              <div class="object-pagination"><button class="small-button" id="object-prev" data-i18n="previousPage">← 上一页</button><span id="object-page">—</span><button class="small-button" id="object-next" data-i18n="nextPage">下一页 →</button></div>
+            </aside>
+            <div class="object-inspector" id="shared-object-inspector">
+              <form id="inspect-form" class="inspect-toolbar"><button type="button" class="small-button" id="inspect-back" data-i18n="goBack">← 返回</button><input id="inspect-address" spellcheck="false" autocomplete="off" placeholder="0x…" aria-label="对象地址"><select id="inspect-kind" aria-label="Address type"><option value="object">UObject / Class</option><option value="instance">Instance 实例</option><option value="struct">Struct 结构</option><option value="field">FField</option></select><button type="submit" class="small-button accent" id="inspect-go" data-i18n="inspect">检查</button></form>
+              <div class="live-controls"><strong data-i18n="instanceInspector">实例地址查询 / 实时值</strong><button type="button" class="small-button" id="inspect-refresh" data-i18n="refreshValues">刷新数值</button><label><input type="checkbox" id="inspect-live"><span data-i18n="liveValues">实时刷新</span></label><select id="inspect-interval" aria-label="Refresh interval"><option value="500">0.5 s</option><option value="1000" selected>1 s</option><option value="2000">2 s</option><option value="5000">5 s</option></select><span id="inspect-sample" role="status"></span></div>
+              <div class="typed-struct-controls"><input id="inspect-type-address" placeholder="UScriptStruct 类型地址 0x…（结构模式必填）" aria-label="Struct type definition address"><label><input type="checkbox" id="inspect-dereference"><span data-i18n="dereferencePointer">输入的是指针槽，先解引用一次</span></label></div>
+              <div class="inspect-options"><label for="inspect-limit" data-i18n="maxRows">详细行数</label><select id="inspect-limit"><option selected>64</option><option>128</option><option>256</option></select></div>
+              <div id="object-tags" class="object-tags"></div>
+              <div id="object-detail-empty" class="empty" data-i18n="selectObject">选择对象或输入地址，查看属性、函数与实时数据。</div>
+              <article id="object-detail" hidden>
+                <div class="object-heading"><div><div class="eyebrow" id="object-class"></div><h3 id="object-title"></h3><div class="object-fullname" id="object-fullname"></div></div><button class="small-button" id="object-tag" data-i18n="addTag">☆ 标记</button></div>
+                <div id="object-links" class="object-links"></div>
+                <div class="object-sections" id="object-sections"></div>
+              </article>
+            </div>
+          </div>
+        </div>
+        <div id="view-world" role="tabpanel" aria-labelledby="tab-world" hidden>
+          <div class="world-status" id="world-status" role="status"></div>
+          <div class="explorer-error" id="world-error" role="alert" hidden></div>
+          <div class="world-layout">
+            <aside class="world-browser">
+              <div class="world-tools"><button class="small-button accent" id="world-discover" data-i18n="discoverWorlds">扫描 World</button><button class="small-button" id="world-refresh" data-i18n="refreshActors">刷新 Actors</button><button class="small-button" id="world-stop" data-i18n="stopSearch" hidden>停止搜索</button></div>
+              <label for="world-select" data-i18n="worldSelect">选择 World</label><select id="world-select"></select>
+              <label for="world-level" data-i18n="worldLevel">Level</label><select id="world-level"><option value="">全部已加载 Level</option></select>
+              <form id="world-search-form" class="world-search"><input type="search" id="world-query" placeholder="Actor 名称 / Class" aria-label="Actor search"><button class="small-button" data-i18n="searchObjects">搜索</button></form>
+              <div class="world-live"><label><input type="checkbox" id="world-live"><span data-i18n="liveActorList">实时遍历</span></label><select id="world-interval" aria-label="Actor list refresh interval"><option value="1000">1 s</option><option value="2000" selected>2 s</option><option value="5000">5 s</option></select><select id="world-limit" aria-label="Actors per page"><option>50</option><option selected>100</option><option>250</option></select></div>
+              <div id="world-summary" class="world-summary"></div><div id="world-actors" class="world-actors"></div>
+              <div class="object-pagination"><button class="small-button" id="world-prev" data-i18n="previousPage">← 上一页</button><span id="world-page">—</span><button class="small-button" id="world-next" data-i18n="nextPage">下一页 →</button></div>
+            </aside>
+            <div id="world-inspector-host"></div>
+          </div>
+        </div>
+        <div id="view-logs" role="tabpanel" aria-labelledby="tab-logs" hidden><pre id="log-lines" tabindex="0" aria-label="Task log"></pre><div class="empty" id="log-empty" data-i18n="noLogs">还没有任务日志。</div></div>
+      </section>
+      <section class="panel workbench" id="workbench" aria-labelledby="workbench-title">
+        <div class="panel-title"><div><div class="eyebrow">MCP · IDA · AGENT</div><h2 id="workbench-title" data-i18n="workbench">分析工作台</h2></div><button class="text-button" id="workbench-refresh" data-i18n="refresh">↻ 刷新</button></div>
+        <div id="workbench-unavailable" class="workbench-hint" role="status"><p id="workbench-connection-message">正在连接电脑分析工作台…</p><a id="open-desktop-workbench" class="small-button accent" href="http://127.0.0.1:18766/#workbench" target="_blank" rel="noopener" data-i18n="openDesktopWorkbench">打开电脑工作台（18766）</a><p data-i18n="workbenchLaunchHint">电脑端双击 desktop/start.cmd；手机服务 / ADB 转发端口 18765 不包含 IDA 工作台。自定义端口请使用启动器输出的 Computer 地址。</p><code id="workbench-current-origin"></code></div>
+        <div id="workbench-content" hidden>
+          <div class="workbench-status"><span class="status-pill" id="ida-status"></span><span id="workbench-device"></span><span id="workbench-ida"></span></div>
+          <form id="ida-endpoint-form" class="ida-endpoint-form"><label for="ida-endpoint">IDA MCP URL</label><input id="ida-endpoint" type="url" value="http://127.0.0.1:13338/mcp" spellcheck="false" aria-label="IDA MCP endpoint" required><button class="small-button accent" type="submit" id="ida-endpoint-save" data-i18n="startIda">保存并自动连接</button></form>
+          <p class="workbench-hint" data-i18n="startIdaHint">电脑端自动启动已安装的 IDA MCP；缺依赖时显示安装指引。</p><p id="ida-service-message" class="ida-service-message" role="status" hidden></p><p id="ida-capability-message" class="workbench-hint"></p>
+          <div class="workbench-error" id="workbench-error" role="alert" hidden></div>
+          <div class="workbench-grid">
+            <div class="analysis-source">
+              <h3 data-i18n="dumpSessions">Dump 会话</h3>
+              <div class="sync-controls"><label><input type="checkbox" id="symbols-only"><span data-i18n="symbolsOnly">只同步符号（不下载库）</span></label><button class="small-button accent" id="sync-dump" data-i18n="syncDump">同步手机 Dump</button></div>
+              <label class="sr-only" for="dump-session" data-i18n="dumpSessions">Dump 会话</label><select id="dump-session"></select>
+              <p id="artifact-root" class="artifact-root"></p>
+              <div class="ida-actions"><button class="small-button" id="connect-ida" data-i18n="checkIda">检查 IDA 连接</button><button class="small-button" id="open-ida" data-i18n="openIda">在 IDA 打开库</button></div>
+              <h3 data-i18n="findFunction">查找函数</h3>
+              <form id="function-search-form" class="function-search"><input type="search" id="function-query" autocomplete="off" placeholder="函数名称 / RVA" aria-label="搜索函数"><button class="small-button" id="find-functions" type="submit" data-i18n="searchObjects">搜索</button></form>
+              <div id="function-results" class="function-results"></div>
+              <div class="function-selection" id="function-selection" hidden><strong id="selected-function-name"></strong><code id="selected-function-rva"></code><pre id="selected-function-signature"></pre><button class="small-button accent" id="analyze-function" data-i18n="analyzeFunction">分析所选函数</button></div>
+            </div>
+            <div class="analysis-output">
+              <div class="analysis-title"><h3 data-i18n="analysisResult">分析结果</h3><span id="workbench-job" role="status"></span><a id="workbench-report" class="download" hidden data-i18n="downloadReport">下载报告</a></div>
+              <div class="analysis-history"><select id="analysis-history" aria-label="Analysis job history"></select><button class="small-button" id="load-analysis" data-i18n="loadAnalysis">查看记录</button></div>
+              <div id="analysis-empty" class="empty" data-i18n="analysisEmpty">同步 Dump，选择函数，再获取 IDA 反编译与引用证据。</div>
+              <div id="analysis-result" hidden><section id="agent-report-result" hidden><h4>Agent report</h4><pre id="agent-report-markdown" class="analysis-code"></pre></section><h4 data-i18n="decompile">反编译</h4><pre id="analysis-decompile" class="analysis-code"></pre><h4 data-i18n="xrefs">交叉引用</h4><div id="analysis-xrefs"></div><details class="analysis-raw"><summary data-i18n="rawEvidence">原始证据</summary><pre id="analysis-raw"></pre></details></div>
+            </div>
+          </div>
+          <div class="agent-task"><div class="agent-heading"><h3 data-i18n="agentTask">Agent 任务</h3><span data-i18n="agentTaskHint">将目标与函数证据组合成任务，交给已连接 MCP 的 Agent。</span></div><label for="agent-goal" class="sr-only" data-i18n="agentGoal">希望实现的目标</label><textarea id="agent-goal" rows="3" placeholder="例如：分析此函数的参数与调用关系，解释其行为并提供等价实现。"></textarea><div class="agent-actions"><button class="small-button accent" id="build-agent-task" data-i18n="buildTask">生成任务</button><button class="small-button" id="copy-agent-task" data-i18n="copyTask">复制任务</button><span id="agent-copy-status" role="status"></span></div><textarea id="agent-prompt" rows="7" readonly aria-label="Agent task prompt" hidden></textarea><p class="workbench-hint" data-i18n="agentTruth">此处生成任务与证据；模型执行由所连接的 Agent 完成。</p></div>
+          <details class="mcp-setup"><summary data-i18n="mcpConnect">连接 MCP 与 IDA</summary><p data-i18n="mcpHint">将 bridge/mcp_config.json 加入 Agent 的 MCP 配置。保持本机 IDA MCP 服务运行；工作台通过本机 bridge 调用。</p><pre id="mcp-config"></pre><button class="small-button" id="copy-mcp-config" data-i18n="copyConfig">复制 MCP 配置</button></details>
+        </div>
+      </section>
+      <footer><span data-i18n="footer">同一工作区 · 手机与电脑实时同步</span><span class="footer-mark">UNREAL MEMORY TOOLS</span></footer>
+    </main>
+  </div>
+</body>
+</html>
