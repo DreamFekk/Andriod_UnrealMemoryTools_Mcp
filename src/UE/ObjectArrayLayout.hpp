@@ -5,10 +5,24 @@ namespace UERuntime {
 struct ObjectArrayLayout {
     uintptr_t slot=0,objects=0;
     uint32_t count=0,capacity=0;
-    uint32_t countOffset=0,itemSize=0,itemObject=0,indexOffset=0,chunkSize=0;
+    int32_t countOffset=0;
+    uint32_t itemSize=0,itemObject=0,indexOffset=0,chunkSize=0;
     int score=0;
     explicit operator bool() const {return score>=6;}
 };
+
+inline uintptr_t ObjectArrayFieldAddress(uintptr_t slot,int32_t offset) {
+    if(offset<0) {
+        const auto distance=uintptr_t(-int64_t(offset));
+        return distance<=slot?slot-distance:0;
+    }
+    const auto distance=uintptr_t(offset);
+    return distance<=std::numeric_limits<uintptr_t>::max()-slot?slot+distance:0;
+}
+
+inline bool ObjectArrayCountOverlapsPointer(int32_t offset) {
+    return int64_t(offset)<int64_t(sizeof(uintptr_t)) && int64_t(offset)+int64_t(sizeof(int32_t))>0;
+}
 
 inline uintptr_t ArrayObject(const Reader& read,const ObjectArrayLayout& layout,uint32_t index) {
     if(index>=layout.count || !layout.itemSize) return 0;
@@ -25,17 +39,34 @@ inline uintptr_t ArrayObject(const Reader& read,const ObjectArrayLayout& layout,
 inline ObjectArrayLayout ValidateObjectArray(const Reader& read,uintptr_t slot,
     const std::function<bool(uintptr_t)>& readable,
     const std::function<int32_t(uintptr_t)>& indexReader={},
-    uint32_t preferredStride=24,uint32_t preferredCount=20,uint32_t preferredIndex=12) {
+    uint32_t preferredStride=24,int32_t preferredCount=20,uint32_t preferredIndex=12) {
     ObjectArrayLayout best;
     const auto objects=Read<uintptr_t>(read,slot);
     if(!Pointer(objects) || !readable(objects)) return best;
-    std::vector<uint32_t> countOffsets{preferredCount,12u,20u,32u,56u,16u,24u,8u};
+    std::vector<int32_t> countOffsets{preferredCount,12,20,32,56,16,24,8};
     std::sort(countOffsets.begin(),countOffsets.end());countOffsets.erase(std::unique(countOffsets.begin(),countOffsets.end()),countOffsets.end());
-    for(uint32_t countOff : countOffsets) {
-        const auto count=Read<int32_t>(read,slot+countOff);
+    for(int32_t countOff : countOffsets) {
+        // The high DWORD of a 64-bit Android pointer commonly looks like a
+        // small object count. Index checks alone cannot distinguish that valid
+        // prefix from the actual complete array.
+        if(countOff < -64 || countOff>256 || countOff%4 || ObjectArrayCountOverlapsPointer(countOff)) continue;
+        const auto countAddress=ObjectArrayFieldAddress(slot,countOff);
+        if(!countAddress)continue;
+        const auto count=Read<int32_t>(read,countAddress);
         if(count<16 || count>4*1024*1024) continue;
-        const auto capacity=countOff>=4?Read<int32_t>(read,slot+countOff-4):0;
-        const bool hasCapacity=capacity>=count && capacity<=16*1024*1024;
+        const auto capacityAt=[&](int32_t offset) {
+            if(ObjectArrayCountOverlapsPointer(offset))return int32_t(0);
+            const auto address=ObjectArrayFieldAddress(slot,offset);
+            return address?Read<int32_t>(read,address):int32_t(0);
+        };
+        const auto before=capacityAt(countOff-4),after=capacityAt(countOff+4);
+        const auto plausibleCapacity=[&](int32_t value){return value>=count && value<=16*1024*1024;};
+        // Standard flat/chunked layouts put MaxElements before NumElements.
+        // Reordered layouts such as Delta Force put NumElements then capacity
+        // after the Objects pointer (+8/+12 on the observed 64-bit build).
+        const auto capacity=plausibleCapacity(before)?before:
+            ((countOff!=12 && countOff!=20 && plausibleCapacity(after))?after:0);
+        const bool hasCapacity=capacity!=0;
         if((countOff==12 || countOff==20) && !hasCapacity) continue;
         for(uint32_t chunkSize : {65536u,0u,16384u}) {
             if(chunkSize) {
@@ -93,6 +124,30 @@ inline ObjectArrayLayout ValidateObjectArray(const Reader& read,uintptr_t slot,
                     ++distant;
                 }
                 if(!candidate || distant<1)continue;
+                // A fully indexed object immediately beyond the claimed end
+                // proves this is only a truncated prefix. Do not silently
+                // accept an arbitrary header integer as NumElements.
+                auto extended=candidate;extended.count=uint32_t(count)+1;
+                const auto next=ArrayObject(read,extended,uint32_t(count));
+                if(Pointer(next) && readable(next)) {
+                    const auto value=indexReader?indexReader(next+indexOff):Read<int32_t>(read,next+indexOff);
+                    if(value==count)continue;
+                }
+                // Inspect the tail for compacted tables whose first indexes
+                // happen to match. A valid count/capacity header may retain a
+                // long empty tail after GC; that alone is not a contradiction.
+                int tail=0;
+                for(uint32_t distance=1;distance<=32 && distance<=uint32_t(count);++distance) {
+                    const auto i=uint32_t(count)-distance;
+                    const auto object=ArrayObject(read,candidate,i);
+                    if(!object)continue;
+                    if(!Pointer(object) || !readable(object)) {candidate.score=0;break;}
+                    const auto value=indexReader?indexReader(object+indexOff):Read<int32_t>(read,object+indexOff);
+                    if(value!=int32_t(i)) {candidate.score=0;break;}
+                    ++tail;
+                    if(tail>=2)break;
+                }
+                if(!candidate || (!tail && !hasCapacity))continue;
                 candidate.score+=distant*3+(hasCapacity?1:0);
                 if(candidate.score>best.score)best=candidate;
             }

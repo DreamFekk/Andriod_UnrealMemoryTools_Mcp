@@ -39,6 +39,12 @@ Wuthering Waves uses dedicated GUObjectArray / NamePool patterns and a Kuro name
 
 The [UE5 / PUBG / NEW STATE guide](ue5-profile-support.md) describes engine layouts, decoder behavior and current limits. Dedicated decoding can fail after game updates; AutoFix is not a substitute for missing or changed proprietary decoding.
 
+### Delta Force object-array fix
+
+Object-array discovery now rejects the high 32 bits of the `Objects` pointer being mistaken for a count of 110, along with false prefix/compacted-table candidates. It supports a count slot at signed relative offset `-12` from the `Objects` field while preserving nonnegative exported structure offsets.
+
+On 2026-11-01, `com.tencent.tmgp.dfm` version `1.201.37117.67` (versionCode `2207`) completed `RunFixup` successfully (`1`) and exported 101,912 objects, 434 packages, 12,515 classes, 8,672 structs, 3,569 enums and 50,173 nonzero function RVAs; SDK export took approximately 733 ms. These results describe that running build, not all Delta Force versions. Validation also passed all 20 [object-array layout cases](../tests/object_array_layout_test.cpp) and 66 [engine compatibility checks](../tests/engine_compat_test.cpp) on the device.
+
 ## Exported files
 
 The default device output is `/sdcard/UnrealMemoryTools_Refactored/<package>/`; the launcher can configure a different root.

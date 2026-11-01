@@ -45,5 +45,62 @@ int main(){try {
     for(uint32_t i=0;i<64;++i)put(objs+i*0x100+12,i^uint32_t(0x10203040));
     layout=UERuntime::ValidateObjectArray(read,slot,valid,[&](uintptr_t at){return int32_t(UERuntime::Read<uint32_t>(read,at)^0x10203040);});
     require(bool(layout),"profile index decoder used during discovery");
+
+    // Real Android pointers have a plausible small count in their high DWORD.
+    // Reproduce the Delta Force header order with a separate high-address image.
+    if constexpr(sizeof(uintptr_t)==8) {
+        const uintptr_t highBase=0x6e4cc00000ULL,highSlot=highBase+0x100,
+            highTable=highBase+0x1000,highObjects=highBase+0x10000,highVtable=highBase+0x4000;
+        std::vector<uint8_t> highMemory(0x50000);
+        const auto highValid=[&](uintptr_t at){return at>=highBase && at-highBase<highMemory.size();};
+        UERuntime::Reader highRead=[&](uintptr_t at,void* out,size_t n){
+            if(!highValid(at)||n>highMemory.size()-(at-highBase))return false;
+            std::memcpy(out,highMemory.data()+(at-highBase),n);return true;
+        };
+        const auto highPut=[&]<class T>(uintptr_t at,T value){std::memcpy(highMemory.data()+(at-highBase),&value,sizeof(value));};
+        constexpr uint32_t actualCount=384,actualCapacity=512;
+        highPut(highSlot,highTable);
+        for(uint32_t i=0;i<actualCount;++i) {
+            const auto object=highObjects+uintptr_t(i)*0x100;
+            highPut(highTable+uintptr_t(i)*32+8,object);
+            highPut(object,highVtable);highPut(object+0x24,i);
+        }
+        require(UERuntime::Read<uint32_t>(highRead,highSlot+4)==110,"fixture reproduces pointer-high false count");
+        require(!UERuntime::ValidateObjectArray(highRead,highSlot,highValid,{},32,4,0x24),
+                "pointer high DWORD alone cannot validate an object count");
+        highPut(highSlot+8,actualCount);highPut(highSlot+12,actualCapacity);
+        auto highLayout=UERuntime::ValidateObjectArray(highRead,highSlot,highValid,{},32,4,0x24);
+        require(highLayout && highLayout.count==actualCount && highLayout.capacity==actualCapacity &&
+                highLayout.countOffset==8 && highLayout.itemSize==32 && highLayout.itemObject==8 &&
+                highLayout.indexOffset==0x24 && !highLayout.chunkSize,
+                "reordered count then capacity header preserves complete high-address array");
+        require(UERuntime::ArrayObject(highRead,highLayout,actualCount-1)==highObjects+(actualCount-1)*0x100,
+                "validated final object remains reachable beyond pointer-high prefix");
+        highPut(highObjects+uintptr_t(actualCount-1)*0x100+0x24,actualCount+1000);
+        require(!UERuntime::ValidateObjectArray(highRead,highSlot,highValid,{},32,8,0x24),
+                "compacted subset with matching prefix but mismatched final index is rejected");
+        highPut(highObjects+uintptr_t(actualCount-1)*0x100+0x24,actualCount-1);
+        highPut(highSlot+8,uint32_t(110));highPut(highSlot+12,uint32_t(110));
+        require(!UERuntime::ValidateObjectArray(highRead,highSlot,highValid,{},32,8,0x24),
+                "live indexed object after count rejects truncated header aliases");
+        highPut(highSlot+8,actualCapacity);highPut(highSlot+12,actualCapacity);
+        highLayout=UERuntime::ValidateObjectArray(highRead,highSlot,highValid,{},32,8,0x24);
+        require(highLayout && highLayout.count==actualCapacity,
+                "valid count-capacity header permits a long empty high-water tail after GC");
+        highPut(highSlot+8,uint32_t(0));highPut(highSlot+12,uint32_t(0));
+        highPut(highSlot-16,actualCapacity);highPut(highSlot-12,actualCount);
+        highLayout=UERuntime::ValidateObjectArray(highRead,highSlot,highValid,{},32,-12,0x24);
+        require(highLayout && highLayout.countOffset==-12 && highLayout.count==actualCount &&
+                highLayout.capacity==actualCapacity,"signed count offset supports metadata before Objects pointer");
+        highPut(highTable+uintptr_t(actualCount-1)*32+8,uintptr_t(0));
+        highLayout=UERuntime::ValidateObjectArray(highRead,highSlot,highValid,{},32,-12,0x24);
+        require(bool(highLayout),"bounded tail validation permits a trailing object hole");
+        for(uint32_t i=actualCount-64;i<actualCount;++i)highPut(highTable+uintptr_t(i)*32+8,uintptr_t(0));
+        highLayout=UERuntime::ValidateObjectArray(highRead,highSlot,highValid,{},32,-12,0x24);
+        require(highLayout && highLayout.count==actualCount,"signed header preserves more than 32 trailing GC holes");
+        require(UERuntime::ObjectArrayFieldAddress(8,-12)==0 &&
+                UERuntime::ObjectArrayFieldAddress(std::numeric_limits<uintptr_t>::max()-1,8)==0,
+                "relative metadata address arithmetic rejects underflow and overflow");
+    }
     std::cout<<"PASS: "<<checks<<" object-array layout regression cases\n";
 }catch(const std::exception& e){std::cerr<<"FAIL: "<<e.what()<<'\n';return 1;}}

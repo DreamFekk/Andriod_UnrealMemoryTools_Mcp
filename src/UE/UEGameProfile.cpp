@@ -223,15 +223,28 @@ namespace
         return result;
     }
 
+    uintptr_t ObjectArrayPrefix(const UERuntime::ObjectArrayLayout& layout) {
+        // The validator uses the pointer slot as its origin. Some custom
+        // containers store NumElements before that pointer; exported offsets
+        // remain relative to an aligned container and must stay nonnegative.
+        if(layout.countOffset>=0)return 0;
+        return (uintptr_t(-int64_t(layout.countOffset))+sizeof(uintptr_t)) & ~(sizeof(uintptr_t)-1);
+    }
+
+    int32_t RelativeObjectCount(const UE_Offsets* off) {
+        return int32_t(int64_t(off->TUObjectArray.NumElements)-int64_t(off->TUObjectArray.Objects));
+    }
+
     void ApplyObjectArrayLayout(UE_Offsets* off,const UERuntime::ObjectArrayLayout& layout,uintptr_t guObject) {
-        off->FUObjectArray.ObjObjects=layout.slot-guObject;
-        off->TUObjectArray.Objects=0;
-        off->TUObjectArray.NumElements=layout.countOffset;
+        const auto prefix=ObjectArrayPrefix(layout);
+        off->FUObjectArray.ObjObjects=layout.slot-prefix-guObject;
+        off->TUObjectArray.Objects=prefix;
+        off->TUObjectArray.NumElements=uintptr_t(int64_t(prefix)+layout.countOffset);
         off->TUObjectArray.NumElementsPerChunk=layout.chunkSize;
         off->FUObjectItem.Size=layout.itemSize;
         off->FUObjectItem.Object=layout.itemObject;
         off->UObject.InternalIndex=layout.indexOffset;
-        LOGI("[Bootstrap] Validated object table: slot=0x%lx count=%u countOff=0x%x stride=0x%x item=0x%x index=0x%x chunk=%u score=%d",
+        LOGI("[Bootstrap] Validated object table: slot=0x%lx count=%u countOff=%d stride=0x%x item=0x%x index=0x%x chunk=%u score=%d",
             layout.slot,layout.count,layout.countOffset,layout.itemSize,layout.itemObject,layout.indexOffset,layout.chunkSize,layout.score);
     }
 
@@ -243,7 +256,8 @@ namespace
         UERuntime::ObjectArrayLayout best;
         auto offsets=MakeCandidateList(off->FUObjectArray.ObjObjects+off->TUObjectArray.Objects,{0,8,16,24,32,40,48,56,64});
         for(auto offset:offsets) {
-            auto layout=UERuntime::ValidateObjectArray(read,guObject+offset,readable,index,uint32_t(off->FUObjectItem.Size),uint32_t(off->TUObjectArray.NumElements),uint32_t(off->UObject.InternalIndex));
+            auto layout=UERuntime::ValidateObjectArray(read,guObject+offset,readable,index,uint32_t(off->FUObjectItem.Size),RelativeObjectCount(off),uint32_t(off->UObject.InternalIndex));
+            if(layout.slot<guObject+ObjectArrayPrefix(layout))continue;
             if(layout.score>best.score) best=layout;
             if(layout.score>=24) break;
         }
@@ -670,9 +684,9 @@ uintptr_t IGameProfile::GetGUObjectArrayPtr() const
                 if(!UERuntime::Pointer(value) || !kPtrValidator.isPtrReadable(value)) continue;
                 const auto slot=seg.startAddress+offset+i;
                 auto layout=UERuntime::ValidateObjectArray(read,slot,readable,
-                    [this](uintptr_t at){return ReadObjectIndex(at);},uint32_t(off->FUObjectItem.Size),uint32_t(off->TUObjectArray.NumElements),uint32_t(off->UObject.InternalIndex));
+                    [this](uintptr_t at){return ReadObjectIndex(at);},uint32_t(off->FUObjectItem.Size),RelativeObjectCount(off),uint32_t(off->UObject.InternalIndex));
                 if(!layout)continue;
-                const auto root=slot-off->FUObjectArray.ObjObjects;
+                const auto root=slot-ObjectArrayPrefix(layout)-off->FUObjectArray.ObjObjects;
                 ApplyObjectArrayLayout(off,layout,root);
                 return root;
             }
